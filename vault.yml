@@ -1,0 +1,68 @@
+# DO NOT EDIT. This file is managed by the `cz` script.
+# The list of developers below is provided for reference purposes, so that you
+# can know the list of developers who are able to decrypt this vault file. To
+# add new developers to your project, please update the corresponding section of
+# your project's `cz.yml` file.
+---
+developers:
+- ernie@carezone.com
+- pat@carezone.com
+- mark@carezone.com
+- ernie@carezone.com
+production:
+  database_password: |-
+    hQEMA+qikMLMvmnJAQf/UKuuHI4crYLKfr/wWR3OH9dTsOD01mFCNneDcDpo
+    0SlnG0/F8Lf90BM0xtl2i46R+lK8nzt+jtoToRyjutDJYvtbJlWeLUVUJ3D1
+    ONtEpVZfKrOgLWQd0OSOl40hLZyX5hM+q1MZIqlAuUyKvg+XkQ2TLZG24iZB
+    /CaixBXZXYWr9kzzfe4qx4mjq4DxdGOl8oA10AjlIbbWl+LLU1t7h3s34ZDE
+    G09NRmcu5mSP6JdsXHZ45LebY2h1GNNJwxGzCba1Dp8GJUWwLpMLghDD3XgY
+    QMjEuWVefXLfk6Ypq/ODZkGdFiXvuRdQkFeRpdjMKGHUymwH1LJpVLwcRKmd
+    5YUCDAP8KBX2ezR81gEQAJJ4VwrEH/TBp4jw7rfmLT+ys6yd40SR3k815tE7
+    FIBvR51vdYW26f3MjoSvqegBerxvprKNx4CUP/thcXjM4VLpbW1w2/ojbgBT
+    zQOgNoxFOYuBOixpu9QFgl1eS4eq2NAIUSfYisObPOkR2x1Q8+y/iDTVJW4R
+    ReaI52uhRF7GcsHcXDW7jqccjFjaZwtVd9azlkU9cDoC30Uk6YF7+FO9HmPl
+    zwJd7o5mY1+8XYOYyFoIYdzIdLuquBTMknutukRVgJo23prJNs/j8TAEvKuO
+    6/UTJJEdWXOjNNiucGbMlHMgwcGLMIJszUZaZxXOtMFkGZf/jqtEeRlfDGpm
+    KAi9V6pNez5506YVhSG9ffButljMCA7NzPq2IlJKPe14otsRs8Y0yklwmzi0
+    6MJ9DIVWr47pKpquATrDm+jTf3qGdOkxBT+JtFm88le5Vagxg9FYsA1IM0Vc
+    ZXcI9g6sWd/tRGDl4/8z65+NtnDT23ZBtcdaRw4SF2S2eX0TuPZOMCKS6NZR
+    7H4I4lvvhK9Qj6MOsUNL6OuNpqg1ooOOXh00Pt54ktNmDphX2i9KrSM5lUKK
+    NUbf8amXLSSWrt2fsd0j6AjdCIOjZe9+8MvVFL3VMnhbbMDyPROFRpzbUV/l
+    A72aAIMpJmNrlfIFmCGdWjosn2LfOVx9VKjMay7rUcsthQEMA7AVNmOQCGG9
+    AQf+Is37/pz233ZBgIobuNVXpa2aFvPHg46STHV4NcVWtb6esdGGGj6DoFYi
+    btjRQwLzXQ67Ja7w5iMi96wMdauL23prQtI9YIEj1PPdqoMeM3mZCYvMfza1
+    AcPR0R18x3UZtovrX6sekA/OKRYF/PXZq9GDatI6yGWoX61NNy5WIf+McYwZ
+    1oF67SE9lGTilmSmWW+OvJmttrM+hPb7kIAXTzLFYgN53/5Z0WDz5m1FcnoP
+    n+lWvZ/PSHxL/9pGK4H+yfmSKdYGHt8pwprenON97/JDhQJUWa3veEFY19iW
+    xQXePOKM8/9bk7HBBaWXf+huG1r6pywXHcbRvnlPt61zmtJHAZ526TbpoucH
+    Hpe5hQKIZVL3SU+v+r6ZQvdMFGzz11uoPlEIYSAhB8n4S8n+AJWVK/AQ2ScE
+    alXjJrQSB3CnOHtU/w3ffuc=
+  secret_key_base: |-
+    hQEMA+qikMLMvmnJAQgAvazZPBs1iJNNkiI0WJ+yUme+YTw9J9Zpqbay6rA4
+    Kbd9ZnjFLCjiPE3990OewYA0VOIDLRg65ueSj9CgCXX0KsEHg+N5l8EYOO7s
+    D5BHWNXUTSPflHF50dyOqHxXjS5T6t/B2wTP072anI1sS7B0u92VqxaQZwfj
+    08PZ1g/ed6ZeNqp7TuCdHDe0sSaZrR99Nj0/QFEAViHbu/uvG/E8RVdmCSYh
+    hcFeM3yvOLa0XU0zuHHphqyPKq7gXGlNuqEP1+QnMpwQ2OSF1/0ZPxchMMBM
+    Mbx+7rM5Jc7Rt3HcNq4xooM6TDQbTQjqEsp7t3hZY+etuOB096d+Pk/4cm5C
+    5YUCDAP8KBX2ezR81gEP/ia+jvAFKDK9fGYIAWQfa3va7fvJtjW2XTj2QL3b
+    SrLm+dzQGhAfuDU39FmzrqFAoSAeXDnCSGCXVntm2h3vGnFpidR6Uys3tmXZ
+    djro2YeFTytlc8C+uJBMDqa2D0H8qkUu1J7zlm2IlRSGKUFt7dCZjwhN/zEx
+    gLo/eub3oDV3QQVLnO+CsAfREhyGx7BNSHU1VF1fxgoEEh9xFnZUTYBQKQma
+    cGKPb9PFv70i6i5/MH6iRqcqC+Jo1sayL714+KqQcQRGRRVpcCN7q848JoUE
+    FXFYLryhfSMMetHktvI0nuPxNa2JFnGQr3sUNW6C1K3CqcnalIURAdgVRnMp
+    Plf8N9xvkX28Wfkh4y1nVJtNAnAXYnHdqvS5M0AdzB7VMemy+eOFZ4MRVUZj
+    ngW0DXaWaLpEbPA6TMkl+dPQJGXZINtODY6GzKRiQTY5KYtUDcIsqqFJqzRk
+    dcXyKeP+6X1PbcwY93QMt+4p8qInTpC8ynwsa3YUVv2QCfkxoW+ZoVcLW5Jv
+    OkSjOXX42vPnwGjAt+Ue1yi3eApvMxBonNxRzfy8i/B06BdQyPT5ykNLYMoA
+    I1AgO7KFIe7M9oNFYRcOWyv8bMxaSbC6bSGazcBoaJuFlmhHtq7c6PHhEsty
+    epVxEK1L/yDwFY/ELpMk8uwA8Ju2Z1cN3dw83Ba1qm1fhQEMA7AVNmOQCGG9
+    AQf/UXiVevvcoYTpTkeFztrqakPXCjQq7NYJfc46QMZOrq+wK/PSrapkjtTG
+    XtHl/sEtK766+UkhMdL/CSy/mmSzEdyoF0k1oK5q9q2G8qWJ/v3h78S6Tdnn
+    avxEI4RG8V8moAcTWvJP1h0LQEVjAqJSKlDYRT+HVDXPBJ9oiczn0M7jOlNt
+    bTutJimxcTsy0kfjG7Lp/QXtp9EUBzJ2npgqcWEQp6akomyALjKDgmHTmQFA
+    ODLIRyid2p7K0fhA1ssfEP1qkEbsikjGO1Wz6D0WdKOG0KLIhbc3baxzPLKF
+    ZprJZCNLYN21WTM7Kvo+Uh2x37hzzjXIa38FPjgh+7eBWdKVAVubynbqbjwN
+    lvkgARAlHaE7XdM2e9iyksV69nXD50tLcpFCI00IQ3jX7LSyiUCMcDbkjKjh
+    lb5i3BmWIo5GT28tGHlJaCH5UvdA5zttWehJ74oSAUoKOFcdeke09Z+GdB0K
+    O8XZ3RCFMYLbtGR20TNPIUs7rcFNhxDG1GoJ2egOeVpoWJmpbTHiPw7EWlv4
+    GwuRYww=

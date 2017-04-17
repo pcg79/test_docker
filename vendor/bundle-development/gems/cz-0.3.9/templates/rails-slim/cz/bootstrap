@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# This script's purpose is to bootstrap a working development environment for
+# use via Docker Compose. If we aren't in development mode, we NEVER want to
+# run this script.
+
+if [ "$ENVIRONMENT" = "development" ]
+then
+  echo "$CZ_APP_NAME ($CZ_APP_VERSION) bootstrapping for $ENVIRONMENT..."
+
+  # The Rails database user will default to the user running the commands. This
+  # will be `app`, unless you've modified your Dockerfiles. Note that we're
+  # assuming you've linked your container in `docker-compose.yml` to the `db`
+  # service, so we can safely specify the `db` hostname below.
+  until psql -h db -U postgres -c '\l' > /dev/null 2>&1
+  do
+    1>&2 echo "Waiting for postgres to come online..."
+    sleep 1
+  done
+
+  psql -h db -U postgres \
+    --command="create role app with createdb login password '';"
+
+  bin/rails db:setup
+else
+  echo "$CZ_APP_NAME ($CZ_APP_VERSION) will not bootstrap for $ENVIRONMENT."
+fi

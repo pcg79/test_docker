@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# When this script is called, it's expected to create any build artifacts your
+# application needs in order to be started. When we're performing a build of
+# your application in preparation for building a deploy image, you'll know, via
+# the $DEPLOYABLE environment variable (this is set up at the start of this
+# script based on the incoming list of deployable environments provided by
+# `cz`). If you need to take special steps in order to prep for creating a
+# deployable image, do so based on this.
+
+echo "$CZ_APP_NAME ($CZ_APP_VERSION) building for $ENVIRONMENT..."
+
+DEPLOYABLE=0
+
+set -- ${DEPLOYABLE_ENVS:-""}
+
+for environment in "$@" ; do
+  if [ "$ENVIRONMENT" = "$environment" ]
+  then
+    DEPLOYABLE=1
+  fi
+done
+
+# If there are build steps that should be executed the same way regardless of
+# the environment you're building for, put them here.
+
+if [ "$DEPLOYABLE" = "1" ]
+then
+  echo "$ENVIRONMENT was specified as deployable."
+  echo "Building $CZ_APP_NAME for copying to a deployment image."
+
+  # These build steps will only be run when building for an environment which
+  # can/will be deployed. Use this space to generate artifacts that must be
+  # present when we copy your application into the deploy image (see
+  # `Dockerfile.deploy`).
+
+  # Exclude development and test gems when bundling for deployment, and target
+  # the bundle to the normal vendor/bundle directory instead of the development
+  # one. We specify this via an environment variable override instead of on the
+  # command line because Bundler doesn't treat them quite the same.
+  export BUNDLE_PATH="/opt/app/vendor/bundle" \
+         BUNDLE_BIN="/opt/app/vendor/bundle/bin"
+  bundle install --clean --without development test &&
+    bin/rails assets:clobber assets:precompile
+else
+  echo "$ENVIRONMENT was not specified as deployable."
+  echo "Building $CZ_APP_NAME for local execution from volume mount."
+
+  # These build steps will only be run when building for an environment that
+  # can't be deployed.
+  bundle install --clean
+fi

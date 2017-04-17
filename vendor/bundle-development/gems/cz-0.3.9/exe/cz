@@ -1,0 +1,836 @@
+#!/usr/bin/env ruby
+
+require 'cz'
+require 'yaml'
+require 'parallel'
+require 'date'
+
+require 'rubygems'
+require 'rubygems/package'
+require 'rubygems/package/tar_writer'
+
+require 'base64'
+require 'erb'
+require 'fileutils'
+require 'find'
+require 'google/apis/oauth2_v2'
+require 'google/apis/storage_v1'
+require 'gpgme'
+require 'net/ssh'
+require 'shellwords'
+require 'timeout'
+
+GPG_RESULT_KEYS = %w(
+  considered no_user_id imported imported_rsa unchanged new_user_ids
+  new_sub_keys new_signatures new_revocations secret_read secret_imported
+  secret_unchanged not_imported
+)
+
+class CZCLI
+  attr_accessor :command, :environment, :options, :rest, :target_sha,
+                :working_dir
+
+  def initialize(command)
+    @command = (command || 'help').downcase
+  end
+
+  def run(*rest)
+    # set options here?
+    # @options     = extract_options!
+
+    rest = [] if command == 'help'
+    self.send(command.to_sym, *rest)
+  rescue NoMethodError
+    $stderr.puts "ERROR:  Invalid command:  #{command}"
+    help
+  rescue ArgumentError
+    $stderr.puts "ERROR:  Invalid arguments for `#{command}` command"
+    help
+  end
+
+  def init(template = "rails")
+    app_name = File.basename(working_dir)
+    template_dir = File.realpath(
+      File.expand_path("../../templates/#{template}", __FILE__)
+    )
+    colordiff = system("echo '' | colordiff - - > /dev/null 2>&1")
+    diff_program = if colordiff
+                     'colordiff'
+                   else
+                     puts "*** Install `colordiff` for prettier diff output."
+                     'diff'
+                   end
+    Find.find(template_dir).map { |path|
+      [path, path.sub(/.*?templates\/#{template}\//, '')]
+    }.each do |orig, dest|
+      next if orig == dest # Skip if toplevel dir
+      if File.directory?(orig)
+        FileUtils.mkdir(dest) unless File.directory?(dest)
+        File.chmod(file_mode(orig), dest)
+      else
+        new_file = ERB.new(File.read(orig)).result(binding)
+        if !File.exist?(dest) || diffs_approved(diff_program, dest, new_file)
+          File.write(dest, new_file)
+          File.chmod(file_mode(orig), dest)
+        else
+          puts "Skipping #{dest}."
+        end
+      end
+    end
+  end
+
+  def diffs_approved(program, old_path, new_contents)
+    diffs = ''
+    open("| #{program} -u #{old_path} -", 'w+') do |diff|
+      diff.write(new_contents)
+      diff.close_write
+      diffs = diff.read
+    end
+    if diffs.empty?
+      print 'File unchanged. '
+      false
+    else
+      puts "File #{old_path} will be overwritten. Diffs:\n\n"
+      puts diffs
+      ask('Accept changes?')
+    end
+  end
+
+  def file_mode(path)
+    File.stat(path).mode
+  end
+
+  def ask(prompt)
+    print "#{prompt} (y/N) "
+    answer = $stdin.gets.chomp
+    answer.downcase[0] == "y"
+  end
+
+  def gpg(mode = nil, email = nil)
+    if mode == 'push'
+      gpg_push
+    elsif mode == 'pull'
+      gpg_pull(email)
+    else
+      abort_with_message "Subcommand for gpg must be one of push/pull"
+    end
+  end
+
+  def gpg_push
+    unless current_email.end_with?('@carezone.com')
+      abort_with_message(
+        "#{current_email} is not a carezone.com e-mail address."
+      )
+    end
+    if key = GPGME::Key.find(:public, "<#{current_email}>").first
+      exported = key.export(armor: true)
+      print "Pushing public key for #{current_email}..."
+      storage.insert_object 'czi-dev-public-keys',
+                            Google::Apis::StorageV1::Object.new(
+                              acl: [
+                                {
+                                  entity: "user-#{current_email}",
+                                  role: 'OWNER'
+                                },
+                                {
+                                  entity: "domain-carezone.com",
+                                  role: 'READER'
+                                }
+                              ]
+                            ),
+                            name: current_email,
+                            upload_source: StringIO.new(exported.to_s),
+                            content_type: 'text/plain'
+      puts ' done.'
+    else
+      abort_with_message(
+        "Your GPG keyring has no public key for #{current_email}."
+      )
+    end
+  end
+
+  def gpg_pull(email)
+    if email
+      pull_gpg_key(email)
+    else
+      pull_all_gpg_keys
+    end
+  end
+
+  def build(environment = "development")
+    @environment = environment.downcase
+    @target_sha  = current_sha
+
+    check_environment!
+
+    sanity_checks
+
+    puts "Building image in '#{working_dir}'"
+
+    build_and_tag_image
+
+    msg = "\nBuild complete."
+    msg << " To deploy, run: #{File.basename($0)} deploy #{environment} #{current_sha}" if deployable_environment?
+
+    puts msg
+  end
+
+  def version
+    puts CZ::VERSION
+  end
+
+  def bootstrap
+    build_dev_image
+    vault_unpack
+    build_app
+    run_command 'docker-compose run --rm app cz/bootstrap'
+  end
+
+  def console(role = 'app')
+    unless system(
+        "docker-compose exec #{role} cz/environment cz/console 2> /dev/null"
+    )
+      puts "Unable to connect to existing #{role} container, starting one..."
+      system("docker-compose run --rm #{role} cz/console")
+    end
+  end
+
+  def start
+    trap('INT', 'IGNORE')
+    system 'docker-compose up'
+  end
+
+  def stop
+    system 'docker-compose stop'
+  end
+
+  def clean
+    run_command "docker run --rm -v #{working_dir}:/opt/app -e ENVIRONMENT=development #{app}-development cz/clean"
+  end
+
+  def push(environment, target_sha = current_sha)
+    @environment = environment.downcase
+    @target_sha = target_sha
+
+    unless deployable_environment?
+      abort_with_message "#{@environment} should not be pushed to the registry."
+    end
+
+    sanity_checks
+
+    push_to_index
+  end
+
+  def deploy(environment, target_sha = current_sha)
+    @environment = environment.downcase
+    @target_sha = target_sha
+
+    unless deployable_environment?
+      abort_with_message "#{@environment} is not a deployable environment."
+    end
+
+    sanity_checks
+
+    push_to_index
+
+    check_environment!
+
+    if target_servers.empty?
+      abort_with_message "No hosts configured for #{@environment}! Exiting."
+    end
+
+    global_pre_deploy
+
+    pre_deploy_hooks
+
+    run_once_hook
+
+    target_servers.each do |target_server|
+      puts "Cycling containers on #{target_server}..."
+      stdout, stderr, code, _signal = run_ssh(
+        target_server, receive_deploy('start')
+      )
+      puts [stdout, stderr].join
+      if code.zero?
+        puts "Containers cycled on #{target_server}\n\n"
+      else
+        abort_with_message "Errors cycling containers on #{target_server}"
+      end
+    end
+
+    post_deploy_hooks
+
+    health_check_hooks
+
+    puts
+    puts "Successfully deployed #{image_with_tag} (#{target_sha})"
+  end
+
+  def vault(subcommand, *rest)
+    self.send("vault_#{subcommand}", *rest)
+  rescue NoMethodError
+    $stderr.puts "ERROR:  Invalid subcommand for `vault`:  #{subcommand}"
+    help
+  end
+
+  def vault_sanity_checks
+    missing = recipient_map.inject([]) { |missing, (email, keys)|
+      missing << email if keys.empty?
+      missing
+    }
+    unless missing.empty?
+      abort_with_message "You don't have public GPG keys for the following developers:\n#{missing.map {|d| "  - #{d}"}.join("\n")}"
+    end
+
+    test = crypto.encrypt("test", recipients: recipient_keys, always_trust: true)
+    crypto.decrypt(test)
+  rescue GPGME::Error::DecryptFailed
+    abort_with_message <<MESSAGE
+You do not have a private key suitable for decrypting any data you would
+encrypt! Please ensure that your private key is in your GPG keyring, and that
+an e-mail associated with it is in your cz.yml "developers:" section.
+MESSAGE
+  end
+
+  def vault_encrypt
+    vault_sanity_checks
+
+    encrypt(decrypted_vault)
+  end
+
+  def vault_del(environment, key)
+    vault_sanity_checks
+
+    @environment = environment
+
+    check_environment!
+
+    decrypted_vault[environment].delete(key)
+    encrypt(decrypted_vault)
+  end
+
+  def vault_set(environment, key, value = nil)
+    vault_sanity_checks
+
+    @environment = environment
+
+    check_environment!
+
+    value ||= $stdin.read
+
+    env_hash = decrypted_vault.fetch(environment, {})
+    env_hash[key] = value
+    decrypted_vault[environment] = env_hash
+    encrypt(decrypted_vault)
+  end
+
+  def vault_spec
+    @vault_spec ||= YAML.load_file("deploy.yml").fetch("vault", []).map { |file|
+      {
+        key: file["key"],
+        path: file["path"] && Shellwords.escape(file["path"].strip.gsub(/(\A|\/)?\.{2}(\/|\z)/, '\1')),
+        mode: file["mode"].to_s.match(/\A[0-9]{3,4}\z/) && file["mode"]
+      }
+    }.select { |file|
+      !file[:key] || !file[:key].empty? || !file[:path] || !file[:path].empty?
+    }
+  end
+
+  def vault_unpack
+    items = decrypted_vault.fetch("development", {})
+    if vault_spec.empty?
+      items.each do |key, value|
+        File.write("vault/#{key}", value)
+      end
+    else
+      mkdir = Hash.new do |h, k|
+        begin
+          FileUtils.mkdir("vault/#{k}")
+        rescue Errno::EEXIST
+        end
+        h[k] = true
+      end
+      vault_spec.each do |file|
+        if items.key?(file[:key])
+          path, name = File.split(file[:path])
+          path.split("/").inject([]) { |dirs, dir|
+            mkdir[File.join(*dirs, dir)]
+            dirs << dir
+          }
+          File.write("vault/#{file[:path]}", items[file[:key]])
+        else
+          $stderr.puts(
+            "Skipping unpack of '#{file[:path]}':\n  No key '#{file[:key]}' in the 'development' vault."
+          )
+        end
+      end
+    end
+    puts "Development vault unpacked!"
+  rescue GPGME::Error::DecryptFailed
+    $stderr.puts <<MESSAGE
+*** IMPORTANT ***
+You do not have permission to unpack the vault for the development environment.
+If starting the app requires files from this vault, you'll need to get yourself
+added to the vault (ask any existing developer on the project to add you to
+`cz.yml` and run `cz vault encrypt`, or supply the files yourself.
+MESSAGE
+  end
+
+  def vault_get(environment, key)
+    @environment = environment
+
+    check_environment!
+
+    print decrypted_vault[environment][key]
+  end
+
+  def help
+    puts <<HELP
+
+Usage:  cz COMMAND
+
+A quick and dirty util for building, running, and deploying docker-based apps
+
+Management Commands:
+  init                                         Initialize an app for deployment using this script
+  bootstrap                                    Do first-time setup after cloning the app repository
+  build [ENVIRONMENT=development]              Package the deploy image using HEAD
+  clean                                        Remove build artifacts
+  console [ROLE=app]                           Start a console in a running docker-compose container, or start a new one
+  start                                        Start the docker-compose development environment
+  stop                                         Stop the docker-compose development environment
+  push ENVIRONMENT [TARGET_SHA=HEAD]           Push deployment image created for ENVIRONMENT with the TARGET_SHA to the docker registry
+  deploy ENVIRONMENT [TARGET_SHA=HEAD]         Deploy to ENVIRONMENT the deploy image that was created with TARGET_SHA
+  gpg push                                     Push your carezone.com e-mail's public GPG key from your GPG keyring
+  gpg pull [EMAIL=ALL]                         Pull a carezone.com e-mails public key (or all public keys) to your GPG keyring
+  vault set ENVIRONMENT KEY [VALUE] [< VALUE]  Set the KEY/VALUE pair under ENVIRONMENT in the vault
+  vault get ENVIRONMENT KEY                    Print the value of KEY under ENVIRONMENT from the vault
+  vault del ENVIRONMENT KEY                    Remove the KEY under ENVIRONMENT from the vault
+  vault encrypt                                Re-encrypt a vault using developer list from cz.yml
+  vault unpack                                 Creates vault filesystem for the development environment
+  help                                         This message
+HELP
+  end
+
+  private
+
+  def build_and_tag_image
+    puts "Building and tagging images.  Please be patient - this may take a while."
+
+    build_dev_image
+    build_app
+    build_deploy_image if deployable_environment?
+  end
+
+  # We build the dev image because the deploy image is based off of it.
+  # Dockerfile.deploy does not contain the tools needed to a full build (it can't
+  # `bundle install`, for example).
+  def build_dev_image
+    run_command "docker build --build-arg CZ_APP_NAME=#{app} --build-arg CZ_BUILD_ENVIRONMENT=development -t #{app}-development -f Dockerfile.dev ."
+  end
+
+  def build_app
+    run_command "docker run --rm -v #{working_dir}:/opt/app -e ENVIRONMENT=#{environment} -e DEPLOYABLE_ENVS='#{deployable_environments.join(' ')}' #{app}-development cz/build"
+    FileUtils.chmod_R('go+rX', './vendor')
+  end
+
+  def build_deploy_image
+    run_command "docker build --build-arg CZ_APP_NAME=#{app} --build-arg CZ_APP_VERSION=#{target_sha} --build-arg CZ_BUILD_ENVIRONMENT=#{environment} -t #{image_with_tag} -f Dockerfile.deploy ."
+  end
+
+  def push_to_index
+    puts "Pushing #{target_sha} to #{image_with_tag}"
+
+    run_command "gcloud docker -- push #{image_with_tag}"
+
+    puts "Pushed successfully"
+  end
+
+  def pull_all_gpg_keys
+    storage.list_objects('czi-dev-public-keys').items.map(&:name).each do |name|
+      pull_gpg_key(name)
+    end
+  end
+
+  def pull_gpg_key(email)
+    unless email.end_with?('@carezone.com')
+      puts "Skipping pull of non-carezone.com email address: #{email}."
+    end
+    print "Pulling public key for #{email}..."
+    armored_key = StringIO.new
+    object = storage.get_object(
+      'czi-dev-public-keys', email,
+      download_dest: armored_key
+    )
+    result = GPGME::Key.import(armored_key.string)
+
+    nonzero_results = GPG_RESULT_KEYS.map { |k|
+      count = result.public_send(k)
+      "#{k}: #{count}" if count.nonzero?
+    }.compact.join(' ')
+    puts " #{nonzero_results}"
+  rescue Google::Apis::ClientError => e
+    if e.message == 'Invalid request'
+      puts " ERROR! (no such key)"
+    else
+      puts " ERROR! (#{e.message})"
+    end
+  end
+
+  def auth
+    @auth ||= Google::Auth.get_application_default
+  rescue RuntimeError # Yes, really. That's what Google raises. :/
+    puts "Couldn't find your application default login. Let's sign in."
+    begin
+      pid = nil
+      Timeout.timeout(30) do
+        pid = Process.spawn(
+          'gcloud auth application-default login',
+          pgroup: true
+        )
+        Process.wait(pid)
+      end
+    rescue Timeout::Error
+      # Kill the process group we spawned above (`gcloud` spawns a subprocess)
+      Process.kill('TERM', - Process.getpgid(pid))
+      abort_with_message 'Timed out while waiting for Google sign in.'
+    end
+    retry
+  end
+
+  def current_email
+    @current_email ||= oauth.get_userinfo(fields: 'email').email
+  end
+
+  def oauth
+    @oauth ||= Google::Apis::Oauth2V2::Oauth2Service.new.tap { |service|
+      service.authorization = auth
+    }
+  end
+
+  def storage
+    @storage ||= Google::Apis::StorageV1::StorageService.new.tap { |service|
+      service.authorization = auth
+    }
+  end
+
+  def sanity_checks
+    check_git_status if deployable_environment?
+    check_target_sha_on_master if deployable_environment?
+    run_command_silently "which docker", "You need docker installed to run this.  Aborting."
+    run_command_silently "which gcloud", "You need gcloud installed and initialized (https://docs.google.com/document/d/1EiPPrerkADJfoS0V7mcVlCg2w07A0AeOkVOZrJlJzh8) to run this.  Aborting."
+    run_command_silently "docker info", "You need to start the docker daemon and try again.  Aborting."
+  end
+
+  def check_git_status
+    result = `git status --porcelain`
+    unless result.empty?
+      puts result
+      abort_with_message "You have uncommitted changes. Please commit your changes and try again."
+    end
+  end
+
+  def check_target_sha_on_master
+    # Verify SHA has been pushed to origin/master (for prod) or any origin (for staging)
+    cmd = "git branch -r --contains #{target_sha}"
+    error_msg = "This commit doesn't exist on "
+
+    if environment == 'production'
+      cmd << " | grep origin/master"
+      error_msg << "origin/master.  "
+    else
+      error_msg << "any branches on origin.  "
+    end
+
+    error_msg << "Please push it before continuing.  Aborting."
+
+    run_command_silently cmd, error_msg
+  end
+
+  def current_sha
+    @current_sha ||= `git rev-parse --short HEAD`.chomp
+  end
+
+  def check_environment!
+    if !valid_environment?
+      abort_with_message "ENVIRONMENT must be one of the following: #{environment_whitelist.join(', ')}"
+    end
+  end
+
+  def valid_environment?
+    environment_whitelist.include? environment
+  end
+
+  def deployable_environment?
+    deployable_environments.include? environment
+  end
+
+  # This may be app-dependent.  Execute a file?
+  def global_pre_deploy
+    puts "Running global pre-deploy..."
+
+    today = Date.today
+    if !today.friday? ||
+      ask("\nIt's Friday.  Are you sure you want to deploy on a Friday?")
+      # all good.
+    else
+      abort_with_message "Aborting"
+    end
+
+    puts "Global pre-deploy finished successfully"
+  end
+
+  def pre_deploy_hooks
+    vault = YAML.dump(decrypted_vault.fetch(environment, {}))
+
+    puts "Running pre-deploy hooks on the target servers..."
+    results = Parallel.map(target_servers) do |target_server|
+      stdout, stderr, code, _signal = run_ssh(
+        target_server, receive_deploy('pre-deploy'), stdin: vault
+      )
+      puts "#{target_server}: #{[stdout, stderr].join}"
+
+      rarray = [target_server, [stdout, stderr].join, code]
+    end
+
+    failed_results = results.select { |result| result[-1].nonzero? }
+
+    if failed_results.empty?
+      puts "Pre-deploy successful"
+    else
+      error_str = failed_results.map { |r| [ r[0], r[1] ].join(": ") }.join
+      abort_with_message "There were errors during pre-deploy (see below).  Deployment FAILED.  Aborting.\n\n#{error_str}"
+    end
+  end
+
+  def run_once_hook
+    run_once_server = target_servers[0]
+    puts "Running run-once hook on #{run_once_server}..."
+
+    stdout, stderr, code, _signal = run_ssh(
+      run_once_server, receive_deploy('run-once')
+    )
+
+    if code.nonzero?
+      abort_with_message "There were errors during run-once hook.  Deployment FAILED.  Aborting.\n\n#{[stdout, stderr].join}"
+    else
+      puts "Run-once hook finished successfully"
+    end
+  end
+
+  def post_deploy_hooks
+    puts "Running post-deploy hooks on the target servers..."
+    results = Parallel.map(target_servers) do |target_server|
+      stdout, stderr, code, _signal = run_ssh(
+        target_server, receive_deploy('post-deploy')
+      )
+      puts "#{target_server}: #{stdout}"
+
+      rarray = [target_server, [stdout, stderr].join, code]
+    end
+
+    failed_results = results.select { |result| result[-1].nonzero? }
+
+    if failed_results.empty?
+      puts "Post-deploy successful"
+    else
+      error_str = failed_results.map { |r| [ r[0], r[1] ].join(": ") }.join
+      abort_with_message "There were errors during post-deploy (see below).  Deployment FAILED.  Aborting.\n\n#{error_str}"
+    end
+  end
+
+  def health_check_hooks
+    # TODO: Set up health check when running `start` command,
+    #   and loop while checking `docker ps` output for health info here
+  end
+
+  def ssh_exec!(ssh, command, stdin: nil)
+    stdout_data = ""
+    stderr_data = ""
+    exit_code = nil
+    exit_signal = nil
+    ssh.open_channel do |channel|
+      channel.exec(command) do |ch, success|
+        unless success
+          abort "FAILED: couldn't execute command (#{command})"
+        end
+        channel.on_data do |ch,data|
+          stdout_data << data
+        end
+
+        channel.on_extended_data do |ch,type,data|
+          stderr_data << data
+        end
+
+        channel.on_request("exit-status") do |ch,data|
+          exit_code = data.read_long
+        end
+
+        channel.on_request("exit-signal") do |ch, data|
+          exit_signal = data.read_long
+        end
+
+        if stdin
+          channel.send_data stdin
+          channel.eof!
+        end
+      end
+    end
+    ssh.loop
+    [stdout_data, stderr_data, exit_code, exit_signal]
+  end
+
+  def run_ssh(host, command, stdin: nil)
+    stdout = stderr = code = signal = nil
+    Net::SSH.start(host) do |ssh|
+      stdout, stderr, code, signal = ssh_exec!(ssh, command, stdin: stdin)
+    end
+    [stdout, stderr, code, signal]
+  end
+
+  def run_command(command, failure_message="Error running command. Aborting.", silent=false)
+    puts "#{command}" unless silent
+
+    success = system("#{command}#{" > /dev/null 2>&1" if silent}")
+
+    unless success
+      abort_with_message failure_message
+    end
+  end
+
+  def receive_deploy(command)
+    "sudo receive-cz-deploy #{command} #{receive_deploy_params}"
+  end
+
+  # TODO: We should update receive-deploy to replace "version" with
+  #   "version-environment" in the relevant locations, and to only remove/stop
+  #   stuff matching the appropriate environment
+  def receive_deploy_params
+    "#{environment} #{app} #{image} #{target_sha}-#{environment}"
+  end
+
+  def decrypted_vault
+    return @hash if defined? @hash
+
+    yaml = YAML.load_file("./vault.yml")
+
+    @hash = { "developers" => yaml.delete("developers") }
+
+    yaml.keys.each do |env|
+      @hash[env] = Hash[
+        yaml[env].map { |k,v|
+          [k, decrypt_value(v)]
+        }
+      ]
+    end
+
+    @hash
+  rescue Errno::ENOENT
+    @hash = { "developers" => recipients }
+  end
+
+  def encrypt(decrypted_hash)
+    new_hash   = { "developers" => recipients }
+
+    (decrypted_hash.keys - ["developers"]).sort.each do |env|
+      new_hash[env] = Hash[
+        decrypted_hash[env].sort { |(ka, _), (kb, _)| ka <=> kb }.map { |k, v|
+          [k, encrypt_value(v)]
+        }
+      ]
+    end
+
+    header = <<HEADER.strip
+# DO NOT EDIT. This file is managed by the `cz` script.
+# The list of developers below is provided for reference purposes, so that you
+# can know the list of developers who are able to decrypt this vault file. To
+# add new developers to your project, please update the corresponding section of
+# your project's `cz.yml` file.
+HEADER
+
+    File.open('vault.yml', 'w') do |file|
+      file.write("#{header}\n#{YAML.dump(new_hash)}")
+    end
+  end
+
+  def decrypt_value(value)
+    crypto.decrypt(Base64.decode64(value)).to_s
+  end
+
+  def encrypt_value(value)
+    Base64.encode64(crypto.encrypt(value, recipients: recipient_keys, always_trust: true).to_s).chomp
+  end
+
+  def run_command_silently(command, failure_message)
+    run_command command, failure_message, true
+  end
+
+  def abort_with_message(message)
+    abort message
+  end
+
+  def image
+    config['image']
+  end
+
+  def image_with_tag
+    "#{image}:#{target_sha}-#{environment}"
+  end
+
+  def extract_options!
+    rest.map do |param|
+      rest.delete(param) if param.start_with?('-')
+    end.compact
+  end
+
+  def working_dir
+    @working_dir ||= Dir.pwd
+  end
+
+  def environment_whitelist
+    deployable_environments + ["development", "test"]
+  end
+
+  def deployable_environments
+    config["environments"].keys
+  end
+
+  def app
+    config['app']
+  end
+
+  def target_servers
+    config["environments"].fetch(environment, {}).fetch('hosts', [])
+  end
+
+  def config
+    @config ||= YAML.load_file('./cz.yml')
+    # Do sanity checks against config file?
+  end
+
+  def crypto
+    @crypto ||= GPGME::Crypto.new
+  end
+
+  def recipients
+    @recipients ||= config['developers']
+  end
+
+  def recipient_keys
+    @recipient_keys ||= recipient_map.values.flatten
+  end
+
+  def recipient_map
+    @recipient_map ||= Hash[
+      config['developers'].map { |email|
+        [email, GPGME::Key.find(:public, email)]
+      }
+    ]
+  end
+
+end
+
+
+command, *rest = ARGV
+
+CZCLI.new(command).run(*rest)

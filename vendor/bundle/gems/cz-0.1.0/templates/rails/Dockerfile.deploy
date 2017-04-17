@@ -1,0 +1,69 @@
+# vim: ft=Dockerfile
+
+# All images should be based upon alpine, if possible. If you require libraries
+# that don't work in alpine (they need glibc, for instance) an acceptable
+# alternative is slim.
+FROM ruby:2.3.3-alpine
+
+# DO NOT CHANGE.
+# When we build images, we pass in some arguments so the containers have some
+# information about the app they're running in their environment. This can be
+# useful for logging, reporting that a container's been started in its `start`
+# script, or any number of other places in your app.
+ARG CZ_APP_NAME
+ARG CZ_APP_VERSION
+ENV CZ_APP_NAME=${CZ_APP_NAME:-unknown} CZ_APP_VERSION=${CZ_APP_VERSION:-deploy}
+
+# Install dependencies you'll need to run your app in production or staging. The
+# app will already have been built, so you don't need to (and shouldn't) install
+# build tools here.
+RUN apk add --update \
+    nodejs \
+    tzdata \
+    postgresql-client \
+    curl
+
+# The default Ruby image has an annoying gem/bundler environment. We override
+# it so that when you install gems within the container, they'll end up in your
+# app's vendor/bundle directory, for copying to our deployment image, and to
+# separate them from any local installations on your machine.
+ENV GEM_HOME /opt/app/vendor/bundle
+ENV BUNDLE_PATH="$GEM_HOME" \
+    BUNDLE_BIN="$GEM_HOME/bin" \
+    BUNDLE_SILENCE_ROOT_WARNING=1 \
+    BUNDLE_APP_CONFIG="$GEM_HOME"
+ENV PATH $BUNDLE_BIN:$PATH
+
+# Ensure /opt exists, and add `app` user and `app` group, then ensure the `app`
+# user has membership in a newly-created `vault` group. This group is used to
+# provide non-root users access to secrets stored in your app's vault.
+RUN /bin/mkdir /opt && \
+    /usr/sbin/addgroup app && \
+    /usr/sbin/addgroup vault && \
+    /usr/sbin/adduser -h /opt/app -s /bin/sh -g app -G app -D app && \
+    /usr/sbin/addgroup app vault
+
+# For Rails apps, we'll copy the entire project into the image. For binaries,
+# we might just copy the binaries themselves.
+COPY . /opt/app
+
+# By default, everything we just copied will be owned by `root. That's not what
+# we want.
+RUN /bin/chown -R app:app /opt/app
+
+# It's strongly recommended that you don't run your app as `root` by default.
+# If you need assistance in getting your app running with lesser permissions,
+# DevX is happy to help!
+USER app
+
+# DO NOT REMOVE. WORKDIR for starting your application and running most anything
+# else should always be `/opt/app`.
+WORKDIR /opt/app
+
+# DO NOT CHANGE. Two important things about this:
+#
+# 1. When deployed, this is the script that we expect to use to launch your app.
+# 2. The "array"-style syntax triggers "exec" behavior instead of "shell"
+#    behavior, making it easier to ensure a timely shutdown of your app when
+#    requested.
+CMD ["cz/start"]

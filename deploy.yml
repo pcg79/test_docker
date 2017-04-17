@@ -1,0 +1,26 @@
+vault: []
+
+defaults: &defaults
+  roles: &default_roles
+    app: &app
+      ports:
+        - '3000:3000'
+      environment: &app_environment
+        DB_HOST: dockertest-db1-internal.czops.net
+        DB_USER: dockertest_rails
+        REDIS_HOST: dockertest-db1-internal.czops.net
+    workers: &workers
+      environment: &workers_environment
+        DB_HOST: dockertest-db1-internal.czops.net
+        DB_USER: dockertest_rails
+        REDIS_HOST: dockertest-db1-internal.czops.net
+
+  run_once:
+    environment:
+      <<: *app_environment
+
+production:
+  <<: *defaults
+
+staging:
+  <<: *defaults

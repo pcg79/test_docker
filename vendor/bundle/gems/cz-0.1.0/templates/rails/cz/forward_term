@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# This script is sourced by those scripts that will launch other long-running
+# processes. By placing the code that launches those processes in a function,
+# and backgrounding the long-running process using `&`, we can just call
+# `forward_term <my-function>`. See the `start` script for an example.
+# The benefit here is that when we run `docker stop` we actually stop cleanly
+# and quickly. Otherwise, we'll end up timing out and sending a KILL signal.
+
+_forward_term() {
+  echo "Forwarding TERM signal to child. (pid: $PID)"
+  kill -TERM $PID
+}
+
+forward_term() {
+  trap _forward_term TERM INT
+  $1
+  PID=$!
+  wait $PID
+  trap - TERM INT
+  wait $PID
+  EXIT_STATUS=$?
+}
+

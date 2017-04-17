@@ -1,0 +1,42 @@
+version: '3'
+
+# Update these services as needed, based on your app dependencies. This sample
+# file assumes your app has both a web app and worker role with dependencies on
+# PostgreSQL and Redis.
+services:
+  db:
+    image: postgres:9.6.1
+  redis:
+    image: redis:3.0.7
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        CZ_APP_NAME: <%= app_name %>
+    image: <%= app_name %>-dev
+    environment:
+      ENVIRONMENT: development
+      ROLE: app
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/opt/app
+    links:
+      - db
+      - redis
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        CZ_APP_NAME: <%= app_name %>
+    image: <%= app_name %>-dev
+    environment:
+      ENVIRONMENT: development
+      ROLE: workers
+    volumes:
+      - .:/opt/app
+    links:
+      - db
+      - redis

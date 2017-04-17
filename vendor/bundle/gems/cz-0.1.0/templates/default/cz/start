@@ -1,0 +1,31 @@
+#!/bin/sh
+
+# This script is responsible for starting your application. It will be passed
+# a $ROLE environment variable, which you should switch on (as seen below) in
+# order to determine the actions needed to start your application.
+#
+# Always be sure to background the process with a trailing `&`, as seen here, so
+# that `forward_term` can do its thing and ensure your process gets a chance to
+# stop cleanly.
+
+. $PWD/cz/forward_term
+. $PWD/cz/environment
+
+echo "$CZ_APP_NAME ($CZ_APP_VERSION) starting $ROLE for $ENVIRONMENT..."
+
+start() {
+  case "$ROLE" in
+    "app")
+      # When running in Docker Compose, an unclean shutdown leaves this pidfile
+      # on your machine.
+      rm -f tmp/pids/server.pid
+      bin/rails s -b 0.0.0.0 &
+      ;;
+    "workers")
+      bin/sidekiq &
+      ;;
+    *)
+  esac
+}
+
+forward_term start

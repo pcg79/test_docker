@@ -1,0 +1,16 @@
+current directory: /opt/app/vendor/bundle-development/gems/binding_of_caller-0.7.2/ext/binding_of_caller
+/usr/local/bin/ruby -r ./siteconf20170406-7-u2vth1.rb extconf.rb
+
+current directory: /opt/app/vendor/bundle-development/gems/binding_of_caller-0.7.2/ext/binding_of_caller
+make "DESTDIR=" clean
+make: *** No rule to make target 'clean'.  Stop.
+
+current directory: /opt/app/vendor/bundle-development/gems/binding_of_caller-0.7.2/ext/binding_of_caller
+make "DESTDIR="
+echo "Nada."
+Nada.
+
+current directory: /opt/app/vendor/bundle-development/gems/binding_of_caller-0.7.2/ext/binding_of_caller
+make "DESTDIR=" install
+echo "Nada."
+Nada.

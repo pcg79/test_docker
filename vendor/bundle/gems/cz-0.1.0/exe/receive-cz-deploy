@@ -1,0 +1,277 @@
+#!/usr/bin/env ruby
+
+require "yaml"
+require "open3"
+require "shellwords"
+require 'rubygems'
+require 'rubygems/package'
+require 'rubygems/package/tar_writer'
+
+def command; @command end
+def environment; @environment end
+def name; @name end
+def image; @image end
+def version; @version end
+
+def volume_params(role_spec)
+  Array(role_spec["volumes"]).map { |volume| "-v #{volume}" }.join(" ")
+end
+
+def port_params(role_spec)
+  Array(role_spec["ports"]).map { |port| "-p #{port}" }.join(" ")
+end
+
+def env_params(role_spec)
+  Array(role_spec["environment"]).map { |key, value|
+    "-e #{[key, value].compact.join("=")}"
+  }.join(" ")
+end
+
+def deploy_yaml
+  @deploy_yaml ||= YAML.load(
+    `docker run --rm #{image}:#{version} cat deploy.yml`
+  )
+end
+
+def deploy_spec
+  @deploy_spec ||= deploy_yaml.fetch(environment, {})
+end
+
+def run_once_spec
+  @run_once_spec ||= deploy_spec.fetch("run_once", {})
+end
+
+def vault_spec
+  @vault_spec ||= deploy_yaml.fetch("vault", []).map { |file|
+    {
+      key: file["key"],
+      path: file["path"] && Shellwords.escape(file["path"].strip.gsub(/(\A|\/)?\.{2}(\/|\z)/, '\1')),
+      mode: file["mode"].to_s.match(/\A[0-9]{3,4}\z/) && file["mode"]
+    }
+  }.select { |file|
+    !file[:key] || !file[:key].empty? || !file[:path] || !file[:path].empty?
+  }
+end
+
+def get_stdin
+  result ||= ""
+  loop do
+    result << $stdin.read_nonblock(1024)
+  end
+rescue IO::WaitReadable
+  available = IO.select([$stdin], [], [], 3)
+  available ? retry : ""
+rescue EOFError
+  result
+end
+
+def vault
+  @vault ||= YAML.load(get_stdin)
+end
+
+def build_vault
+  tarfile = StringIO.new("")
+  if vault
+    Gem::Package::TarWriter.new(tarfile) do |tar|
+      if vault_spec.empty?
+        vault.each do |key, value|
+          tar.add_file(key, "0660") do |tf|
+            tf.write(value)
+          end
+        end
+      else
+        mkdir = Hash.new { |h, k| tar.mkdir(k, "0755"); h[k] = true }
+        vault_spec.each do |file|
+          path, name = File.split(file[:path])
+          path.split("/").inject([]) { |dirs, dir|
+            mkdir[File.join(*dirs, dir)]
+            dirs << dir
+          }
+          tar.add_file(file[:path], file[:mode] || "0660") do |tf|
+            tf.write(vault[file[:key]])
+          end
+        end
+      end
+    end
+  end
+  tarfile.string
+end
+
+def vault_tar
+  @vault_tar ||= build_vault
+end
+
+def vault_name
+  "#{name}.vault.#{version}"
+end
+
+def retrying(sleep_for: 0, retries: 3, &block)
+  yield
+rescue => e
+  raise e if retries < 1
+  sleep sleep_for
+  retrying(sleep_for: sleep_for, retries: retries - 1, &block)
+end
+
+def prepare_for_deploy
+  puts "Pulling #{image}:#{version}..."
+  docker("pull #{image}:#{version}", error: "Failed to pull #{image}:#{version}. Exiting.")
+  puts "Preparing vault volume..."
+  # Let's just keep the container running for a moment...
+  docker("run --detach --rm -v #{vault_name}:/opt/app/vault --name=#{vault_name} #{image}:#{version} cz/idle")
+  # Container and vault are named the same here for clarity
+  docker_pipe("cp - #{vault_name}:/opt/app/vault/", vault_tar)
+  docker("exec --user=root #{vault_name} /bin/chgrp -R vault /opt/app/vault || true")
+  docker("stop $(docker ps -a -q -f name=#{name}.vault.*)")
+end
+
+def docker_pipe(cmd, data, error: nil, echo: false)
+  command = cmd.strip.gsub(/\s+/, ' ')
+  puts "Piping data to docker command: #{command}" if echo
+  open("| docker #{command}", "w+") do |docker|
+    docker.write(data)
+    docker.close_write
+  end
+    # or raise error || "Failed executing docker command: #{command}"
+end
+
+# docker_shell("alpine", ["ls -la", "pwd", "echo 'hello there'"])
+def docker_shell(docker_cmd, commands)
+  Open3.popen3("docker #{docker_cmd}") do |stdin, stdout, stderr, thr|
+    pid = thr.pid
+    stdin.puts commands.join("\n")
+    stdin.close
+    begin
+      until [stdout, stderr].find { |f| !f.eof }.nil? do
+        ready = IO.select([stdout, stderr])
+
+        if ready
+          readable, = ready
+          readable.each do |handle|
+            begin
+              if handle.equal? stdout
+                $stdout.write(handle.read_nonblock(1024))
+              elsif handle.equal? stderr
+                $stderr.write(handle.read_nonblock(1024))
+              end
+            rescue EOFError => e
+              # We'll handle this on the next loop through
+            end
+          end
+        end
+      end
+      thr.value
+    rescue IOError => e
+      puts "IOError: #{e.inspect}"
+      puts e.backtrace
+    end
+  end
+end
+
+def docker(cmd, error: nil, echo: false)
+  command = cmd.strip.gsub(/\s+/, ' ')
+  puts "Executing docker command: #{command}" if echo
+  system("docker #{command}") or raise error || "Failed executing docker command: #{command}"
+end
+
+# Arguments
+@command, @environment, @name, @image, @version = ARGV
+
+unless command && name && image && version && environment
+  puts "Usage: #{$0} COMMAND ENVIRONMENT NAME IMAGE VERSION"
+  exit 1
+end
+
+case command
+when 'pre-deploy'
+  prepare_for_deploy
+
+  deploy_spec["roles"].each do |role_name, role_spec|
+    role_spec = Hash(role_spec)
+    cmd = %{run \
+    --rm \
+    --name=#{name}.#{role_name}.#{command}.#{version} \
+    -v #{vault_name}:/opt/app/vault:ro \
+    #{volume_params(role_spec)} \
+    -e ROLE=#{role_name} \
+    -e ENVIRONMENT=#{environment} \
+    #{env_params(role_spec)} \
+    --log-driver=syslog \
+    --log-opt syslog-address=tcp://127.0.0.1:514 \
+    --log-opt tag="#{name}.#{role_name}.#{command}.#{version}" \
+    #{image}:#{version} \
+    cz/pre-deploy}
+    docker(cmd, echo: true, error: "Unsuccessful in #{command}. Exiting.")
+  end
+when 'run-once'
+  cmd = %{run \
+  --rm \
+  --name=#{name}.run-once \
+  -v #{vault_name}:/opt/app/vault:ro \
+  #{volume_params(run_once_spec)} \
+  -e ENVIRONMENT=#{environment} \
+  #{env_params(run_once_spec)} \
+  --log-driver=syslog \
+  --log-opt syslog-address=tcp://127.0.0.1:514 \
+  --log-opt tag="#{name}.#{command}.#{version}" \
+  #{image}:#{version} \
+  cz/run-once}
+  docker(cmd, echo: true, error: "Unsuccessful in #{command}. Exiting.")
+when 'start'
+  deploy_spec["roles"].each do |role_name, role_spec|
+    role_spec = Hash(role_spec)
+
+    running_containers = `docker ps -q -f name=#{name}.#{role_name}.#{command}.*`.split("\n").join(" ")
+    unless running_containers.empty?
+      docker(
+        "stop #{running_containers}",
+        error: "Stopping the old #{name}.#{role_name} container failed. Exiting."
+      )
+    end
+
+    stopped_containers = `docker ps -a -q -f name=#{name}.#{role_name}.#{command}.*`.split("\n").join(" ")
+    unless stopped_containers.empty?
+      docker(
+        "rm #{stopped_containers}",
+        error: "Removing the old #{name}.#{role_name} container failed. Exiting."
+      )
+    end
+
+    cmd = %{run \
+    --detach \
+    --name=#{name}.#{role_name}.#{command}.#{version} \
+    -v #{vault_name}:/opt/app/vault:ro \
+    #{volume_params(role_spec)} \
+    #{port_params(role_spec)} \
+    -e ROLE=#{role_name} \
+    -e ENVIRONMENT=#{environment} \
+    #{env_params(role_spec)} \
+    --restart=unless-stopped \
+    --log-driver=syslog \
+    --log-opt syslog-address=tcp://127.0.0.1:514 \
+    --log-opt tag="#{name}.#{role_name}.#{command}.#{version}" \
+    #{image}:#{version}}
+    docker(cmd, echo: true, error: "Unsuccessful in #{command}. Exiting.")
+  end
+when 'post-deploy'
+  deploy_spec["roles"].each do |role_name, role_spec|
+    role_spec = Hash(role_spec)
+    cmd = %{run \
+    --rm \
+    --name=#{name}.#{role_name}.#{command}.#{version} \
+    -v #{vault_name}:/opt/app/vault:ro \
+    #{volume_params(role_spec)} \
+    -e ROLE=#{role_name} \
+    -e ENVIRONMENT=#{environment} \
+    #{env_params(role_spec)} \
+    --log-driver=syslog \
+    --log-opt syslog-address=tcp://127.0.0.1:514 \
+    --log-opt tag="#{name}.#{role_name}.#{command}.#{version}" \
+    #{image}:#{version} \
+    cz/post-deploy}
+    docker(cmd, echo: true, error: "Unsuccessful in #{command}. Exiting.")
+  end
+else
+  puts "Unknown command: #{command}"
+  exit 1
+end

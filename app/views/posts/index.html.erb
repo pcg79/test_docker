@@ -1,0 +1,13 @@
+<%= link_to 'New Post', new_post_path %>
+
+<table>
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <%= render partial: 'post', collection: @posts %>
+  </tbody>
+</table>

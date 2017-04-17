@@ -1,0 +1,13 @@
+current directory: /opt/app/vendor/bundle-development/gems/json-1.8.6/ext/json
+/usr/local/bin/ruby -r ./siteconf20170406-7-19m3zx6.rb extconf.rb
+creating Makefile
+
+current directory: /opt/app/vendor/bundle-development/gems/json-1.8.6/ext/json
+make "DESTDIR=" clean
+
+current directory: /opt/app/vendor/bundle-development/gems/json-1.8.6/ext/json
+make "DESTDIR="
+make: Nothing to be done for 'all'.
+
+current directory: /opt/app/vendor/bundle-development/gems/json-1.8.6/ext/json
+make "DESTDIR=" install

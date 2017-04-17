@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# This script is responsible for cleaning up any build artifacts we might not
+# need or want around.
+
+echo "$CZ_APP_NAME ($CZ_APP_VERSION) cleaning for $ENVIRONMENT..."
+
+bin/rails assets:clobber
+
+rm -rf vendor/bundle*

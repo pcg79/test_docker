@@ -1,0 +1,38 @@
+version: '3'
+
+# Update these services as needed, based on your app dependencies. This sample
+# file assumes your app has both a web app and worker role with dependencies on
+# PostgreSQL and Redis.
+services:
+  db:
+    image: postgres:9.6.2-alpine
+  redis:
+    image: redis:3.0.7-alpine
+  app:
+    image: <%= app_name %>-development
+    environment:
+      ENVIRONMENT: development
+      ROLE: app
+      DB_HOST: db
+      DB_USER: app
+      REDIS_HOST: redis
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/opt/app
+    links:
+      - db
+      - redis
+  workers:
+    image: <%= app_name %>-development
+    environment:
+      ENVIRONMENT: development
+      ROLE: workers
+      DB_HOST: db
+      DB_USER: app
+      REDIS_HOST: redis
+    volumes:
+      - .:/opt/app
+    links:
+      - db
+      - redis

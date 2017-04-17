@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# This script is intended to house any actions you'd like to take after the app
+# has been successfully deployed. It's run once per server.
+
+. $PWD/cz/environment
+
+echo "$CZ_APP_NAME ($CZ_APP_VERSION) post-deploying for $ENVIRONMENT..."
+
+# Nothing to see here, but feel free to add your own behavior if you like!

@@ -1,0 +1,21 @@
+# What's your app named?
+app: <%= app_name %>
+# This is the repository we'll tag/push your deploy images to
+image: us.gcr.io/czi-dev/<%= app_name %>
+# List the e-mail addresses associated with the public GPG keys of developers
+# who should be able to work with this app's vault or deploy the app.
+developers:
+  - <%= ENV['USER'] || 'you' %>@carezone.com
+
+# Each environment listed here should have at least one host. These are the VMs
+# where we'll deploy this app.
+environments:
+  production:
+    hosts:
+      - your-production-host-1.czops.net
+      - your-production-host-2.czops.net
+
+  staging:
+    hosts:
+      - your-staging-host-1.czops.net
+      - your-staging-host-2.czops.net

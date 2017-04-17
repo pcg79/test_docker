@@ -1,0 +1,84 @@
+# If provided, each item in the vault should consist of the following keys:
+#
+#   key: the name of the secret in the vault
+#   path: the path (under /opt/app/vault) at which the item should be placed
+#   mode: (optional - default 0660) the octal permission mode for the file
+#
+# Any secrets that exist in the vault but are not projected to the filesystem
+# will not be visible to our app. In other words, if we reference one secret
+# here, we must reference them all. If we reference none, then each key in the
+# vault will have a corresponding file in /opt/app/vault named for the key.
+#
+# Example:
+#
+# vault:
+#   - key: database_config_file
+#     path: config/database.yml
+#     mode: 0660
+#   - key: secret_word
+#     path: secret_word
+vault: []
+
+production:
+  # Each key in this section will result in a corresponding container launching
+  # on the deployment host, with its `ROLE` environment variable set accordingly
+  # so that our `cz/start` script can do the right thing.
+  roles:
+    app:
+      # We can expose one or more ports using any syntax supported by
+      # `docker run`.
+      ports:
+        - '3000:3000' # nginx will be expecting a web app on port 3000
+      # We can mount both named volumes (auto-created on first access) or host
+      # directories to our container. They'll be mounted as `root`, though, so
+      # don't try anything too clever. We'll look at adding improvements to this
+      # feature should anyone come up with a good reason for it. ;)
+      volumes:
+        - my_named_volume:/opt/app/shared_volume
+        - /some/host/directory:/opt/app/host_directory
+      # Lastly, we can supply environment variables for our app to make use of.
+      # If we'd like to inherit from the host's environment, that's possible as
+      # well, via `ENV_VAR_NAME: null`.
+      #
+      # DO NOT PUT SECRET INFORMATION IN THIS FILE (or in the environment, for
+      # that matter).
+      environment: &production_environment
+        DB_HOST: production_db
+        DB_USER: production_db_user
+        REDIS_HOST: production_redis
+    # And so on, for each container we'd like to launch.
+    workers:
+      volumes:
+        - my_named_volume:/opt/app/shared_volume
+        - /some/host/directory:/opt/app/host_directory
+      environment:
+        <<: *production_environment
+  # There's a special case during deploy -- once, and only once, per deploy,
+  # we'll pick one host out of the deploy targets and run our `cz/run-once`
+  # script there. If we need to configure how that runs in any special way, we
+  # can do that here.
+  run_once:
+    environment:
+      <<: *production_environment
+
+staging:
+  roles:
+    app:
+      ports:
+        - '3000:3000'
+      volumes:
+        - my_named_volume:/opt/app/shared_volume
+        - /some/host/directory:/opt/app/host_directory
+      environment: &staging_environment
+        DB_HOST: staging_db
+        DB_USER: staging_db_user
+        REDIS_HOST: staging_redis
+    workers:
+      volumes:
+        - my_named_volume:/opt/app/shared_volume
+        - /some/host/directory:/opt/app/host_directory
+      environment:
+        <<: *staging_environment
+  run_once:
+    environment:
+      <<: *staging_environment

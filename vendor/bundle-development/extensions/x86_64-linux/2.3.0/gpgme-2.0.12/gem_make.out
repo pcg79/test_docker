@@ -1,0 +1,61 @@
+current directory: /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme
+/usr/local/bin/ruby -r ./siteconf20170406-7-cwn6o0.rb extconf.rb
+************************************************************************
+IMPORTANT!  gpgme gem uses locally built versions of required C libraries,
+namely libgpg-error, libassuan, and gpgme.
+
+If this is a concern for you and you want to use the system library
+instead, abort this installation process and reinstall gpgme gem as
+follows:
+
+    gem install gpgme -- --use-system-libraries
+
+************************************************************************
+Extracting libgpg-error-1.21.tar.bz2 into tmp/x86_64-alpine-linux-musl/ports/libgpg-error/1.21... OK
+Running 'configure' for libgpg-error 1.21... OK
+Running 'compile' for libgpg-error 1.21... OK
+Running 'install' for libgpg-error 1.21... OK
+Activating libgpg-error 1.21 (from /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ports/x86_64-alpine-linux-musl/libgpg-error/1.21)...
+Extracting libassuan-2.4.2.tar.bz2 into tmp/x86_64-alpine-linux-musl/ports/libassuan/2.4.2... OK
+Running 'configure' for libassuan 2.4.2... OK
+Running 'compile' for libassuan 2.4.2... OK
+Running 'install' for libassuan 2.4.2... OK
+Activating libassuan 2.4.2 (from /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ports/x86_64-alpine-linux-musl/libassuan/2.4.2)...
+Extracting gpgme-1.6.0.tar.bz2 into tmp/x86_64-alpine-linux-musl/ports/gpgme/1.6.0... OK
+Running 'configure' for gpgme 1.6.0... OK
+Running 'compile' for gpgme 1.6.0... OK
+Running 'install' for gpgme 1.6.0... OK
+Activating gpgme 1.6.0 (from /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ports/x86_64-alpine-linux-musl/gpgme/1.6.0)...
+checking for linker flags for static linking... -Wl,-Bstatic
+checking for gpgme.h... yes
+checking for gpgme >= 1.1.3... yes
+checking for gpgme_op_export_keys()... yes
+creating Makefile
+
+current directory: /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme
+make "DESTDIR=" clean
+
+current directory: /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme
+make "DESTDIR="
+compiling gpgme_n.c
+gpgme_n.c: In function 'rb_s_gpgme_data_new_from_mem':
+gpgme_n.c:255:28: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
+   if (RSTRING_LEN(vbuffer) < size)
+                            ^
+gpgme_n.c: In function 'rb_s_gpgme_op_keylist_start':
+gpgme_n.c:806:34: warning: suggest braces around empty body in an 'if' statement [-Wempty-body]
+     SET_KEYLIST_IN_PROGRESS(vctx);
+                                  ^
+gpgme_n.c: In function 'rb_s_gpgme_op_keylist_ext_start':
+gpgme_n.c:835:34: warning: suggest braces around empty body in an 'if' statement [-Wempty-body]
+     SET_KEYLIST_IN_PROGRESS(vctx);
+                                  ^
+linking shared-object gpgme_n.so
+Cleaning files only used during build.
+rm -rf /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme/tmp/x86_64-alpine-linux-musl/ports
+rmdir -p /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme/tmp/x86_64-alpine-linux-musl
+rm -rf /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ports
+
+current directory: /opt/app/vendor/bundle-development/gems/gpgme-2.0.12/ext/gpgme
+make "DESTDIR=" install
+/usr/bin/install -c -m 0755 gpgme_n.so ./.gem.20170406-7-yx4f4h
