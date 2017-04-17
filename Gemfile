@@ -1,4 +1,4 @@
-source 'http://gems.czops.net:9292'
+# source 'http://gems.czops.net:9292'
 
 # Bundle edge Rails instead: gem 'rails', github: 'rails/rails'
 gem 'rails', '4.2.7.1'
@@ -27,7 +27,7 @@ gem 'puma'
 
 gem 'sidekiq'
 
-gem 'cz', path: "~/dev/cz"
+# gem 'cz'
 
 # Use Capistrano for deployment
 # gem 'capistrano-rails', group: :development
