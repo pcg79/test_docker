@@ -1,5 +1,4 @@
 GEM
-  remote: http://gems.czops.net:9292/
   specs:
     actionmailer (4.2.7.1)
       actionpack (= 4.2.7.1)
