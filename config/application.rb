@@ -28,4 +28,3 @@ end
 # You could also choose to initialize this in an initializer, but then you'll
 # need to update certain rake tasks to load the environment. We choose to do
 # this here because the CZ Config is a top-level app concern.
-Vault = CZ::Config.load(Rails.root + "vault")
