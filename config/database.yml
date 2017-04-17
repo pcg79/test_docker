@@ -4,9 +4,8 @@ default: &default
   # For details on connection pooling, see rails configuration guide
   # http://guides.rubyonrails.org/configuring.html#database-pooling
   pool: 5
-  host: <%= ENV.fetch('DB_HOST', 'localhost') %>
-  username: <%= ENV.fetch('DB_USER', ENV['USER']) %>
-  password: <%= Vault[:database_password, default: ''] %>
+  host: localhost
+  username: admin
 
 development:
   <<: *default
